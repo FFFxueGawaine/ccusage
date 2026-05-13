@@ -1,18 +1,15 @@
-import type { UsageReportConfig } from '@ccusage/terminal/table';
 import process from 'node:process';
 import {
-	addEmptySeparatorRow,
-	createUsageReportTable,
-	formatTotalsRow,
-	formatUsageDataRow,
-	pushBreakdownRows,
+	createModelUsageReportTable,
+	formatDateLong,
+	formatGrandTotalsRow,
+	formatUsageDataGroupedRow,
 } from '@ccusage/terminal/table';
 import { Result } from '@praha/byethrow';
 import { define } from 'gunshi';
 import pc from 'picocolors';
 import { loadConfig, mergeConfigWithArgs } from '../_config-loader-tokens.ts';
 import { groupByProject, groupDataByProject } from '../_daily-grouping.ts';
-import { formatDateCompact } from '../_date-utils.ts';
 import { processWithJq } from '../_jq-processor.ts';
 import { formatProjectName } from '../_project-names.ts';
 import { sharedCommandConfig } from '../_shared-args.ts';
@@ -137,13 +134,7 @@ export const dailyCommand = define({
 			// Print header
 			logger.box('Claude Code Token Usage Report - Daily');
 
-			// Create table with compact mode support
-			const tableConfig: UsageReportConfig = {
-				firstColumnName: 'Date',
-				dateFormatter: (dateStr: string) => formatDateCompact(dateStr, mergedOptions.timezone),
-				forceCompact: ctx.values.compact,
-			};
-			const table = createUsageReportTable(tableConfig);
+			const table = createModelUsageReportTable('Date', ctx.values.compact);
 
 			// Add daily data - group by project if instances flag is used
 			if (Boolean(mergedOptions.instances) && dailyData.some((d) => d.project != null)) {
@@ -155,7 +146,7 @@ export const dailyCommand = define({
 					// Add project section header
 					if (!isFirstProject) {
 						// Add empty row for visual separation between projects
-						table.push(['', '', '', '', '', '', '', '']);
+						table.push(['', '', '', '', '', '', '', '', '', '']);
 					}
 
 					// Add project header row
@@ -168,24 +159,21 @@ export const dailyCommand = define({
 						'',
 						'',
 						'',
+						'',
+						'',
 					]);
 
 					// Add data rows for this project
 					for (const data of projectData) {
-						const row = formatUsageDataRow(data.date, {
+						table.push(formatUsageDataGroupedRow(formatDateLong(data.date, mergedOptions.timezone), {
 							inputTokens: data.inputTokens,
 							outputTokens: data.outputTokens,
 							cacheCreationTokens: data.cacheCreationTokens,
 							cacheReadTokens: data.cacheReadTokens,
 							totalCost: data.totalCost,
 							modelsUsed: data.modelsUsed,
-						});
-						table.push(row);
-
-						// Add model breakdown rows if flag is set
-						if (mergedOptions.breakdown) {
-							pushBreakdownRows(table, data.modelBreakdowns);
-						}
+							modelBreakdowns: data.modelBreakdowns,
+						}));
 					}
 
 					isFirstProject = false;
@@ -193,36 +181,25 @@ export const dailyCommand = define({
 			} else {
 				// Standard display without project grouping
 				for (const data of dailyData) {
-					// Main row
-					const row = formatUsageDataRow(data.date, {
+					table.push(formatUsageDataGroupedRow(formatDateLong(data.date, mergedOptions.timezone), {
 						inputTokens: data.inputTokens,
 						outputTokens: data.outputTokens,
 						cacheCreationTokens: data.cacheCreationTokens,
 						cacheReadTokens: data.cacheReadTokens,
 						totalCost: data.totalCost,
 						modelsUsed: data.modelsUsed,
-					});
-					table.push(row);
-
-					// Add model breakdown rows if flag is set
-					if (mergedOptions.breakdown) {
-						pushBreakdownRows(table, data.modelBreakdowns);
-					}
+						modelBreakdowns: data.modelBreakdowns,
+					}));
 				}
 			}
 
-			// Add empty row for visual separation before totals
-			addEmptySeparatorRow(table, 8);
-
-			// Add totals
-			const totalsRow = formatTotalsRow({
+			table.push(formatGrandTotalsRow({
 				inputTokens: totals.inputTokens,
 				outputTokens: totals.outputTokens,
 				cacheCreationTokens: totals.cacheCreationTokens,
 				cacheReadTokens: totals.cacheReadTokens,
 				totalCost: totals.totalCost,
-			});
-			table.push(totalsRow);
+			}));
 
 			log(table.toString());
 

@@ -54,6 +54,27 @@ export function formatDateCompact(dateStr: string, timezone?: string, locale?: s
 }
 
 /**
+ * Formats a date string for report rows (e.g., "May 12, 2026")
+ * @param dateStr - Input date string (YYYY-MM-DD or ISO timestamp)
+ * @param timezone - Timezone to use for formatting
+ * @returns Human-readable date string
+ */
+export function formatDateLong(dateStr: string, timezone?: string): string {
+	const isSimpleDateFormat = /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
+	const date = isSimpleDateFormat
+		? timezone != null
+			? new Date(`${dateStr}T00:00:00Z`)
+			: new Date(`${dateStr}T00:00:00`)
+		: new Date(dateStr);
+	return new Intl.DateTimeFormat('en-US', {
+		year: 'numeric',
+		month: 'short',
+		day: 'numeric',
+		timeZone: timezone,
+	}).format(date);
+}
+
+/**
  * Horizontal alignment options for table cells
  */
 export type TableCellAlign = 'left' | 'right' | 'center';
@@ -248,9 +269,9 @@ export class ResponsiveTable {
 				if (align === 'right') {
 					adjustedWidth = Math.max(adjustedWidth, 10);
 				} else if (index === 0) {
-					adjustedWidth = Math.max(adjustedWidth, 10);
+					adjustedWidth = Math.max(adjustedWidth, 14);
 				} else if (index === 1) {
-					adjustedWidth = Math.max(adjustedWidth, 12);
+					adjustedWidth = Math.max(adjustedWidth, 21);
 				} else {
 					adjustedWidth = Math.max(adjustedWidth, 8);
 				}
@@ -361,6 +382,66 @@ export function formatNumber(num: number): string {
 }
 
 /**
+ * Formats a token count using compact K/M/B units for table display
+ * @param num - Token count to format
+ * @returns Compact token count string (e.g., "1.2K", "3.4M")
+ */
+export function formatTokenCount(num: number): string {
+	const abs = Math.abs(num);
+	const units = [
+		{ suffix: 'B', value: 1_000_000_000 },
+		{ suffix: 'M', value: 1_000_000 },
+		{ suffix: 'K', value: 1_000 },
+	] as const;
+
+	for (const unit of units) {
+		if (abs >= unit.value) {
+			const value = num / unit.value;
+			const formatted = value
+				.toFixed(2)
+				.replace(/\.00$/, '')
+				.replace(/(\.\d)0$/, '$1');
+			return `${formatted}${unit.suffix}`;
+		}
+	}
+
+	return num.toLocaleString('en-US');
+}
+
+/**
+ * Formats cache hit rate from input and cache read tokens
+ * @param inputTokens - Input tokens for the same row
+ * @param cacheReadTokens - Tokens read from cache
+ * @returns Cache hit rate string
+ */
+export function formatCacheHitRate(
+	inputTokens: number,
+	cacheReadTokens: number,
+): string {
+	if (inputTokens === 0) {
+		return '0.0%';
+	}
+	return `${((cacheReadTokens / inputTokens) * 100).toFixed(1)}%`;
+}
+
+/**
+ * Formats cache reuse rate from cache creation and read tokens
+ * @param cacheCreationTokens - Tokens written into cache
+ * @param cacheReadTokens - Tokens read from cache
+ * @returns Cache reuse rate string
+ */
+export function formatCacheReuseRate(
+	cacheCreationTokens: number,
+	cacheReadTokens: number,
+): string {
+	const cacheTotal = cacheCreationTokens + cacheReadTokens;
+	if (cacheTotal === 0) {
+		return '0.0%';
+	}
+	return `${((cacheReadTokens / cacheTotal) * 100).toFixed(1)}%`;
+}
+
+/**
  * Formats a number as USD currency with dollar sign and 2 decimal places
  * @param amount - The amount to format
  * @returns Formatted currency string (e.g., "$12.34")
@@ -434,6 +515,80 @@ export function formatModelsDisplayMultiline(models: string[]): string {
 		.join('\n');
 }
 
+type ModelBreakdownDisplayData = {
+	modelName: string;
+	inputTokens: number;
+	outputTokens: number;
+	cacheCreationTokens: number;
+	cacheReadTokens: number;
+	cost: number;
+};
+
+function getTotalTokens(data: {
+	inputTokens: number;
+	outputTokens: number;
+	cacheCreationTokens: number;
+	cacheReadTokens: number;
+}): number {
+	return data.inputTokens + data.outputTokens + data.cacheCreationTokens + data.cacheReadTokens;
+}
+
+function getDisplayedTotalTokens(data: {
+	inputTokens: number;
+	outputTokens: number;
+	cacheCreationTokens: number;
+	cacheReadTokens: number;
+}): number {
+	return getDisplayedInputTokens(data) + data.outputTokens;
+}
+
+function getDisplayedInputTokens(data: {
+	inputTokens: number;
+	cacheCreationTokens: number;
+	cacheReadTokens: number;
+}): number {
+	return data.inputTokens + data.cacheCreationTokens + data.cacheReadTokens;
+}
+
+/**
+ * Formats model names with per-model token details for usage rows
+ * @param breakdowns - Model-specific token breakdowns
+ * @returns Multiline model display with compact token details
+ */
+export function formatModelBreakdownsDisplay(breakdowns: ModelBreakdownDisplayData[]): string {
+	return breakdowns
+		.map((breakdown) => {
+			const totalTokens = getTotalTokens(breakdown);
+			return [
+				`- ${formatModelName(breakdown.modelName)}: ${formatTokenCount(totalTokens)}`,
+				`  I ${formatTokenCount(breakdown.inputTokens)} | O ${formatTokenCount(breakdown.outputTokens)} | C+ ${formatTokenCount(breakdown.cacheCreationTokens)} | CR ${formatTokenCount(breakdown.cacheReadTokens)}`,
+			].join('\n');
+		})
+		.join('\n');
+}
+
+function formatPercent(value: number): string {
+	if (!Number.isFinite(value)) {
+		return '0.0%';
+	}
+	return `${value.toFixed(1)}%`;
+}
+
+function formatSharePercent(part: number, whole: number): string {
+	return whole === 0 ? '0.0%' : formatPercent((part / whole) * 100);
+}
+
+function joinLines(lines: string[]): string {
+	return lines.join('\n');
+}
+
+function formatModelNameForGroupedRow(modelName: string, index: number): string {
+	const formattedName = formatModelName(modelName);
+	const colors = [pc.yellow, pc.blue, pc.magenta, pc.green, pc.cyan] as const;
+	const color = colors[index % colors.length] ?? pc.white;
+	return color(formattedName);
+}
+
 /**
  * Pushes model breakdown rows to a table
  * @param table - The table to push rows to
@@ -464,18 +619,15 @@ export function pushBreakdownRows(
 		}
 
 		// Add data columns with gray styling
-		const totalTokens =
-			breakdown.inputTokens +
-			breakdown.outputTokens +
-			breakdown.cacheCreationTokens +
-			breakdown.cacheReadTokens;
+		const totalTokens = getTotalTokens(breakdown);
 
 		row.push(
-			pc.gray(formatNumber(breakdown.inputTokens)),
-			pc.gray(formatNumber(breakdown.outputTokens)),
-			pc.gray(formatNumber(breakdown.cacheCreationTokens)),
-			pc.gray(formatNumber(breakdown.cacheReadTokens)),
-			pc.gray(formatNumber(totalTokens)),
+			pc.gray(formatTokenCount(breakdown.inputTokens)),
+			pc.gray(formatTokenCount(breakdown.outputTokens)),
+			pc.gray(formatTokenCount(breakdown.cacheCreationTokens)),
+			pc.gray(formatTokenCount(breakdown.cacheReadTokens)),
+			pc.gray(formatTokenCount(totalTokens)),
+			pc.gray(formatCacheReuseRate(breakdown.cacheCreationTokens, breakdown.cacheReadTokens)),
 			pc.gray(formatCurrency(breakdown.cost)),
 		);
 
@@ -512,7 +664,200 @@ export type UsageData = {
 	cacheReadTokens: number;
 	totalCost: number;
 	modelsUsed?: string[];
+	modelBreakdowns?: ModelBreakdownDisplayData[];
 };
+
+/**
+ * Creates model-level usage rows for a grouped report period
+ * @param firstColumnValue - Date/month/week/session display value
+ * @param data - Usage data with model breakdowns
+ * @returns Table rows with one row per model and one total row
+ */
+export function formatUsageDataRows(firstColumnValue: string, data: UsageData): (string | number)[][] {
+	const totalTokens = getDisplayedTotalTokens(data);
+	const breakdowns = data.modelBreakdowns ?? [];
+
+	if (breakdowns.length === 0) {
+		return [
+			[
+				firstColumnValue,
+				'total',
+				'100.0%',
+				formatTokenCount(getDisplayedInputTokens(data)),
+				formatTokenCount(data.outputTokens),
+				formatTokenCount(data.cacheCreationTokens),
+				formatTokenCount(data.cacheReadTokens),
+				formatCacheHitRate(getDisplayedInputTokens(data), data.cacheReadTokens),
+				formatTokenCount(totalTokens),
+				formatCurrency(data.totalCost),
+			],
+		];
+	}
+
+	const rows = breakdowns.map((breakdown, index) => {
+		const modelTotalTokens = getDisplayedTotalTokens(breakdown);
+		return [
+			index === 0 ? firstColumnValue : '',
+			formatModelName(breakdown.modelName),
+			formatSharePercent(modelTotalTokens, totalTokens),
+			formatTokenCount(getDisplayedInputTokens(breakdown)),
+			formatTokenCount(breakdown.outputTokens),
+			formatTokenCount(breakdown.cacheCreationTokens),
+			formatTokenCount(breakdown.cacheReadTokens),
+			formatCacheHitRate(getDisplayedInputTokens(breakdown), breakdown.cacheReadTokens),
+			formatTokenCount(modelTotalTokens),
+			formatCurrency(breakdown.cost),
+		];
+	});
+
+	rows.push([
+		'',
+		'total',
+		'100.0%',
+		formatTokenCount(getDisplayedInputTokens(data)),
+		formatTokenCount(data.outputTokens),
+		formatTokenCount(data.cacheCreationTokens),
+		formatTokenCount(data.cacheReadTokens),
+		formatCacheHitRate(getDisplayedInputTokens(data), data.cacheReadTokens),
+		formatTokenCount(totalTokens),
+		formatCurrency(data.totalCost),
+	]);
+
+	return rows;
+}
+
+/**
+ * Creates one multiline row for a grouped report period
+ * @param firstColumnValue - Date/month/week/session display value
+ * @param data - Usage data with model breakdowns
+ * @returns A single table row with model lines stacked inside each cell
+ */
+export function formatUsageDataGroupedRow(firstColumnValue: string, data: UsageData): (string | number)[] {
+	const totalTokens = getDisplayedTotalTokens(data);
+	const breakdowns = data.modelBreakdowns ?? [];
+
+	if (breakdowns.length === 0) {
+		return [
+			firstColumnValue,
+			'total',
+			'100.0%',
+			formatTokenCount(getDisplayedInputTokens(data)),
+			formatTokenCount(data.outputTokens),
+			formatTokenCount(data.cacheCreationTokens),
+			formatTokenCount(data.cacheReadTokens),
+			formatCacheHitRate(getDisplayedInputTokens(data), data.cacheReadTokens),
+			formatTokenCount(totalTokens),
+			formatCurrency(data.totalCost),
+		];
+	}
+
+	const modelLines = breakdowns.map((breakdown, index) =>
+		formatModelNameForGroupedRow(breakdown.modelName, index),
+	);
+	const shareLines = breakdowns.map((breakdown) =>
+		formatSharePercent(getDisplayedTotalTokens(breakdown), totalTokens),
+	);
+	const inputLines = breakdowns.map((breakdown) => formatTokenCount(getDisplayedInputTokens(breakdown)));
+	const outputLines = breakdowns.map((breakdown) => formatTokenCount(breakdown.outputTokens));
+	const cacheCreateLines = breakdowns.map((breakdown) =>
+		formatTokenCount(breakdown.cacheCreationTokens),
+	);
+	const cacheReadLines = breakdowns.map((breakdown) => formatTokenCount(breakdown.cacheReadTokens));
+	const hitLines = breakdowns.map((breakdown) =>
+		formatCacheHitRate(getDisplayedInputTokens(breakdown), breakdown.cacheReadTokens),
+	);
+	const totalLines = breakdowns.map((breakdown) => formatTokenCount(getDisplayedTotalTokens(breakdown)));
+	const costLines = breakdowns.map((breakdown) => formatCurrency(breakdown.cost));
+
+	modelLines.push(pc.bold('total'));
+	shareLines.push(pc.bold('100.0%'));
+	inputLines.push(pc.bold(formatTokenCount(getDisplayedInputTokens(data))));
+	outputLines.push(pc.bold(formatTokenCount(data.outputTokens)));
+	cacheCreateLines.push(pc.bold(formatTokenCount(data.cacheCreationTokens)));
+	cacheReadLines.push(pc.bold(formatTokenCount(data.cacheReadTokens)));
+	hitLines.push(pc.bold(formatCacheHitRate(getDisplayedInputTokens(data), data.cacheReadTokens)));
+	totalLines.push(pc.bold(formatTokenCount(totalTokens)));
+	costLines.push(pc.bold(formatCurrency(data.totalCost)));
+
+	return [
+		firstColumnValue,
+		joinLines(modelLines),
+		joinLines(shareLines),
+		joinLines(inputLines),
+		joinLines(outputLines),
+		joinLines(cacheCreateLines),
+		joinLines(cacheReadLines),
+		joinLines(hitLines),
+		joinLines(totalLines),
+		joinLines(costLines),
+	];
+}
+
+/**
+ * Creates the grand total row for model-level report tables
+ * @param totals - Totals data to display
+ * @returns Formatted grand total row
+ */
+export function formatGrandTotalsRow(totals: UsageData): (string | number)[] {
+	const totalTokens = getDisplayedTotalTokens(totals);
+	return [
+		pc.yellow('Total'),
+		pc.yellow('Grand Total'),
+		pc.yellow('100.0%'),
+		pc.yellow(formatTokenCount(getDisplayedInputTokens(totals))),
+		pc.yellow(formatTokenCount(totals.outputTokens)),
+		pc.yellow(formatTokenCount(totals.cacheCreationTokens)),
+		pc.yellow(formatTokenCount(totals.cacheReadTokens)),
+		pc.yellow(formatCacheHitRate(getDisplayedInputTokens(totals), totals.cacheReadTokens)),
+		pc.yellow(formatTokenCount(totalTokens)),
+		pc.yellow(formatCurrency(totals.totalCost)),
+	];
+}
+
+/**
+ * Creates a model-level usage report table with one model per row
+ * @param firstColumnName - Name for the first grouping column
+ * @param forceCompact - Whether to force compact mode
+ * @returns Configured ResponsiveTable instance
+ */
+export function createModelUsageReportTable(
+	firstColumnName: string,
+	forceCompact = false,
+): ResponsiveTable {
+	const headers = [
+		firstColumnName,
+		'Model',
+		'Share',
+		'Input',
+		'Output',
+		'Cache Create',
+		'Cache Read',
+		'Hit',
+		'Total Tokens',
+		'Cost (USD)',
+	];
+
+	return new ResponsiveTable({
+		head: headers,
+		style: { head: ['cyan'] },
+		colAligns: ['left', 'left', 'right', 'right', 'right', 'right', 'right', 'right', 'right', 'right'],
+		compactHead: headers,
+		compactColAligns: [
+			'left',
+			'left',
+			'right',
+			'right',
+			'right',
+			'right',
+			'right',
+			'right',
+			'right',
+			'right',
+		],
+		compactThreshold: 100,
+		forceCompact,
+	});
+}
 
 /**
  * Creates a standard usage report table with consistent styling and layout
@@ -528,6 +873,7 @@ export function createUsageReportTable(config: UsageReportConfig): ResponsiveTab
 		'Cache Create',
 		'Cache Read',
 		'Total Tokens',
+		'Hit',
 		'Cost (USD)',
 	];
 
@@ -540,9 +886,10 @@ export function createUsageReportTable(config: UsageReportConfig): ResponsiveTab
 		'right',
 		'right',
 		'right',
+		'right',
 	];
 
-	const compactHeaders = [config.firstColumnName, 'Models', 'Input', 'Output', 'Cost (USD)'];
+	const compactHeaders = [config.firstColumnName, 'Models', 'Total Tokens', 'Hit', 'Cost (USD)'];
 
 	const compactAligns: TableCellAlign[] = ['left', 'left', 'right', 'right', 'right'];
 
@@ -578,17 +925,23 @@ export function formatUsageDataRow(
 	data: UsageData,
 	lastActivity?: string,
 ): (string | number)[] {
-	const totalTokens =
-		data.inputTokens + data.outputTokens + data.cacheCreationTokens + data.cacheReadTokens;
+	const totalTokens = getTotalTokens(data);
+	const modelsDisplay =
+		data.modelBreakdowns != null && data.modelBreakdowns.length > 0
+			? formatModelBreakdownsDisplay(data.modelBreakdowns)
+			: data.modelsUsed != null
+				? formatModelsDisplayMultiline(data.modelsUsed)
+				: '';
 
 	const row: (string | number)[] = [
 		firstColumnValue,
-		data.modelsUsed != null ? formatModelsDisplayMultiline(data.modelsUsed) : '',
-		formatNumber(data.inputTokens),
-		formatNumber(data.outputTokens),
-		formatNumber(data.cacheCreationTokens),
-		formatNumber(data.cacheReadTokens),
-		formatNumber(totalTokens),
+		modelsDisplay,
+		formatTokenCount(data.inputTokens),
+		formatTokenCount(data.outputTokens),
+		formatTokenCount(data.cacheCreationTokens),
+		formatTokenCount(data.cacheReadTokens),
+		formatTokenCount(totalTokens),
+		formatCacheReuseRate(data.cacheCreationTokens, data.cacheReadTokens),
 		formatCurrency(data.totalCost),
 	];
 
@@ -609,17 +962,17 @@ export function formatTotalsRow(
 	totals: UsageData,
 	includeLastActivity = false,
 ): (string | number)[] {
-	const totalTokens =
-		totals.inputTokens + totals.outputTokens + totals.cacheCreationTokens + totals.cacheReadTokens;
+	const totalTokens = getTotalTokens(totals);
 
 	const row: (string | number)[] = [
 		pc.yellow('Total'),
 		'', // Empty for Models column in totals
-		pc.yellow(formatNumber(totals.inputTokens)),
-		pc.yellow(formatNumber(totals.outputTokens)),
-		pc.yellow(formatNumber(totals.cacheCreationTokens)),
-		pc.yellow(formatNumber(totals.cacheReadTokens)),
-		pc.yellow(formatNumber(totalTokens)),
+		pc.yellow(formatTokenCount(totals.inputTokens)),
+		pc.yellow(formatTokenCount(totals.outputTokens)),
+		pc.yellow(formatTokenCount(totals.cacheCreationTokens)),
+		pc.yellow(formatTokenCount(totals.cacheReadTokens)),
+		pc.yellow(formatTokenCount(totalTokens)),
+		pc.yellow(formatCacheReuseRate(totals.cacheCreationTokens, totals.cacheReadTokens)),
 		pc.yellow(formatCurrency(totals.totalCost)),
 	];
 
@@ -981,6 +1334,81 @@ if (import.meta.vitest != null) {
 		it('handles edge cases', () => {
 			expect(formatNumber(Number.MAX_SAFE_INTEGER)).toBe('9,007,199,254,740,991');
 			expect(formatNumber(Number.MIN_SAFE_INTEGER)).toBe('-9,007,199,254,740,991');
+		});
+	});
+
+	describe('formatTokenCount', () => {
+		it('formats token counts with compact units', () => {
+			expect(formatTokenCount(999)).toBe('999');
+			expect(formatTokenCount(1500)).toBe('1.5K');
+			expect(formatTokenCount(12_000)).toBe('12K');
+			expect(formatTokenCount(1_200_000)).toBe('1.2M');
+			expect(formatTokenCount(2_000_000_000)).toBe('2B');
+		});
+	});
+
+	describe('formatCacheHitRate', () => {
+		it('formats cache hit rate from input and cache read tokens', () => {
+			expect(formatCacheHitRate(0, 0)).toBe('0.0%');
+			expect(formatCacheHitRate(100, 75)).toBe('75.0%');
+		});
+	});
+
+	describe('formatModelBreakdownsDisplay', () => {
+		it('formats each model with compact token details', () => {
+			const output = formatModelBreakdownsDisplay([
+				{
+					modelName: 'claude-sonnet-4-20250514',
+					inputTokens: 1200,
+					outputTokens: 300,
+					cacheCreationTokens: 0,
+					cacheReadTokens: 2_000_000,
+					cost: 1,
+				},
+			]);
+
+			expect(output).toBe('- sonnet-4: 2M\n  I 1.2K | O 300 | C+ 0 | CR 2M');
+		});
+	});
+
+	describe('formatUsageDataGroupedRow', () => {
+		it('stacks model breakdown values in multiline cells', () => {
+			const row = formatUsageDataGroupedRow('May 12, 2026', {
+				inputTokens: 3_771_190,
+				outputTokens: 310_790,
+				cacheCreationTokens: 77_550,
+				cacheReadTokens: 49_119_250,
+				totalCost: 54.6,
+				modelBreakdowns: [
+					{
+						modelName: 'gpt-5.5',
+						inputTokens: 3_556_550,
+						outputTokens: 300_660,
+						cacheCreationTokens: 73_450,
+						cacheReadTokens: 48_760_000,
+						cost: 54.01,
+					},
+					{
+						modelName: 'gpt-5.4',
+						inputTokens: 214_640,
+						outputTokens: 10_130,
+						cacheCreationTokens: 4100,
+						cacheReadTokens: 359_250,
+						cost: 0.59,
+					},
+				],
+			});
+
+			expect(row[0]).toBe('May 12, 2026');
+			expect(String(row[1])).toContain('gpt-5.5');
+			expect(String(row[1])).toContain('gpt-5.4');
+			expect(String(row[1])).toContain('total');
+			expect(row[2]).toContain('98.9%');
+			expect(row[2]).toContain('1.1%');
+			expect(row[7]).toContain('93.1%');
+			expect(row[7]).toContain('62.2%');
+			expect(row[8]).toContain('53.28M');
+			expect(row[9]).toContain('$54.60');
 		});
 	});
 

@@ -149,6 +149,7 @@ export const sessionCommand = define({
 						cacheReadTokens: data.cacheReadTokens,
 						totalCost: data.totalCost,
 						modelsUsed: data.modelsUsed,
+						modelBreakdowns: data.modelBreakdowns,
 					},
 					data.lastActivity,
 				);
@@ -162,7 +163,7 @@ export const sessionCommand = define({
 			}
 
 			// Add empty row for visual separation before totals
-			addEmptySeparatorRow(table, 9);
+			addEmptySeparatorRow(table, 10);
 
 			// Add totals
 			const totalsRow = formatTotalsRow(
