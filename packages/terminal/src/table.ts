@@ -164,6 +164,64 @@ export class ResponsiveTable {
 	}
 
 	/**
+	 * Normalizes table headers so compact labels can use shorter names.
+	 * @param header - Header label to normalize
+	 * @returns Normalized label
+	 */
+	private normalizeHeader(header: string): string {
+		return header
+			.toLowerCase()
+			.replace(/\s*\([^)]*\)/g, '')
+			.replaceAll(/\s+/g, '');
+	}
+
+	/**
+	 * Gets equivalent header names for matching compact/full table columns.
+	 * @param header - Header label to expand
+	 * @returns Equivalent normalized labels
+	 */
+	private getHeaderAliases(header: string): Set<string> {
+		const normalized = this.normalizeHeader(header);
+		const aliases = new Set([normalized]);
+
+		if (normalized === 'cost') {
+			aliases.add('costusd');
+		}
+		if (normalized === 'total') {
+			aliases.add('totaltokens');
+		}
+		if (normalized === 'totaltokens') {
+			aliases.add('total');
+		}
+		if (normalized === 'cache') {
+			aliases.add('cacheread');
+		}
+		if (normalized === 'cacheread') {
+			aliases.add('cache');
+		}
+
+		return aliases;
+	}
+
+	/**
+	 * Finds a full table header index for a compact header.
+	 * @param compactHeader - Compact header label
+	 * @returns Matching full table index, or -1 when not found
+	 */
+	private findHeaderIndex(compactHeader: string): number {
+		const exactIndex = this.head.indexOf(compactHeader);
+		if (exactIndex >= 0) {
+			return exactIndex;
+		}
+
+		const compactAliases = this.getHeaderAliases(compactHeader);
+		return this.head.findIndex((header) => {
+			const aliases = this.getHeaderAliases(header);
+			return Array.from(compactAliases).some((alias) => aliases.has(alias));
+		});
+	}
+
+	/**
 	 * Gets indices mapping from full table to compact table
 	 * @returns Array of column indices to keep in compact mode
 	 */
@@ -174,7 +232,7 @@ export class ResponsiveTable {
 
 		// Map compact headers to original indices
 		return this.compactHead.map((compactHeader) => {
-			const index = this.head.indexOf(compactHeader);
+			const index = this.findHeaderIndex(compactHeader);
 			if (index < 0) {
 				// Log warning for debugging configuration issues
 				this.logger(
@@ -1184,6 +1242,29 @@ if (import.meta.vitest != null) {
 				expect(indices).toEqual([0, 1, 4]); // Date (0), Model (1), Cost (4)
 
 				// Restore original value
+				process.env.COLUMNS = originalColumns;
+			});
+
+			it('should match equivalent compact header labels', () => {
+				const mockLogger = vi.fn();
+				const table = new ResponsiveTable({
+					head: ['Date', 'Model', 'Cache', 'Total', 'Cost'],
+					compactHead: ['Date', 'Cache Read', 'Total Tokens', 'Cost (USD)'],
+					compactThreshold: 100,
+					logger: mockLogger,
+				});
+
+				const originalColumns = process.env.COLUMNS;
+				process.env.COLUMNS = '80';
+
+				table.push(['2024-01-01', 'sonnet-4', '1000', '1500', '$1.50']);
+				table.toString();
+
+				// eslint-disable-next-line ts/no-unsafe-assignment, ts/no-unsafe-call, ts/no-unsafe-member-access
+				const indices = (table as any).getCompactIndices();
+				expect(indices).toEqual([0, 2, 3, 4]);
+				expect(mockLogger).not.toHaveBeenCalled();
+
 				process.env.COLUMNS = originalColumns;
 			});
 
