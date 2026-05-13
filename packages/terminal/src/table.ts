@@ -451,6 +451,26 @@ export function formatCurrency(amount: number): string {
 }
 
 /**
+ * Formats a cost for dense table display with color emphasis.
+ * @param amount - The USD amount to format
+ * @returns Formatted and colored cost string
+ */
+export function formatCostForDisplay(amount: number): string {
+	if (amount === 0) {
+		return pc.gray('-');
+	}
+
+	const formatted = formatCurrency(amount);
+	if (amount >= 50) {
+		return pc.red(formatted);
+	}
+	if (amount >= 10) {
+		return pc.yellow(formatted);
+	}
+	return pc.green(formatted);
+}
+
+/**
  * Formats Claude model names into a shorter, more readable format
  * Extracts model type and generation from full model name
  * @param modelName - Full model name (e.g., "claude-sonnet-4-20250514" or "claude-sonnet-4-5-20250929")
@@ -584,10 +604,10 @@ function formatColoredCacheHitRate(inputTokens: number, cacheReadTokens: number)
 	if (value >= 90) {
 		return pc.green(formatted);
 	}
-	if (value >= 60) {
-		return pc.yellow(formatted);
+	if (value < 70) {
+		return pc.red(formatted);
 	}
-	return pc.red(formatted);
+	return formatted;
 }
 
 function joinLines(lines: string[]): string {
@@ -769,7 +789,7 @@ export function formatUsageDataGroupedRow(
 			formatTokenCount(data.cacheReadTokens),
 			formatColoredCacheHitRate(getDisplayedInputTokens(data), data.cacheReadTokens),
 			formatTokenCount(totalTokens),
-			formatCurrency(data.totalCost),
+			formatCostForDisplay(data.totalCost),
 		];
 		if (includeCacheCreate) {
 			row.splice(5, 0, formatTokenCount(data.cacheCreationTokens));
@@ -793,7 +813,7 @@ export function formatUsageDataGroupedRow(
 		formatColoredCacheHitRate(getDisplayedInputTokens(breakdown), breakdown.cacheReadTokens),
 	);
 	const totalLines = breakdowns.map((breakdown) => formatTokenCount(getDisplayedTotalTokens(breakdown)));
-	const costLines = breakdowns.map((breakdown) => formatCurrency(breakdown.cost));
+	const costLines = breakdowns.map((breakdown) => formatCostForDisplay(breakdown.cost));
 
 	modelLines.push(pc.bold('total'));
 	shareLines.push(pc.bold('100.0%'));
@@ -803,7 +823,7 @@ export function formatUsageDataGroupedRow(
 	cacheReadLines.push(pc.bold(formatTokenCount(data.cacheReadTokens)));
 	hitLines.push(pc.bold(formatColoredCacheHitRate(getDisplayedInputTokens(data), data.cacheReadTokens)));
 	totalLines.push(pc.bold(formatTokenCount(totalTokens)));
-	costLines.push(pc.bold(formatCurrency(data.totalCost)));
+	costLines.push(pc.bold(formatCostForDisplay(data.totalCost)));
 
 	const row = [
 		firstColumnValue,
@@ -842,7 +862,7 @@ export function formatGrandTotalsRow(
 		pc.yellow(formatTokenCount(totals.cacheReadTokens)),
 		formatColoredCacheHitRate(getDisplayedInputTokens(totals), totals.cacheReadTokens),
 		pc.yellow(formatTokenCount(totalTokens)),
-		pc.yellow(formatCurrency(totals.totalCost)),
+		formatCostForDisplay(totals.totalCost),
 	];
 	if (includeCacheCreate) {
 		row.splice(5, 0, pc.yellow(formatTokenCount(totals.cacheCreationTokens)));
@@ -868,13 +888,13 @@ export function createModelUsageReportTable(
 		'Share',
 		'Input',
 		'Output',
-		'Cache Read',
+		'Cache',
 		'Hit',
-		'Total Tokens',
-		'Cost (USD)',
+		'Total',
+		'Cost',
 	];
 	if (includeCacheCreate) {
-		headers.splice(5, 0, 'Cache Create');
+		headers.splice(5, 0, 'C.Create');
 	}
 
 	return new ResponsiveTable({

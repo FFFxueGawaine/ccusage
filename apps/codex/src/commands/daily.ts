@@ -1,6 +1,6 @@
 import process from 'node:process';
 import {
-	formatCurrency,
+	formatCostForDisplay,
 	formatTokenCount,
 	ResponsiveTable,
 } from '@ccusage/terminal/table';
@@ -41,10 +41,10 @@ function formatColoredCacheHitRate(inputTokens: number, cachedInputTokens: numbe
 	if (value >= 90) {
 		return pc.green(formatted);
 	}
-	if (value >= 60) {
-		return pc.yellow(formatted);
+	if (value < 70) {
+		return pc.red(formatted);
 	}
-	return pc.red(formatted);
+	return formatted;
 }
 
 function joinLines(lines: string[]): string {
@@ -73,7 +73,7 @@ function formatCodexUsageGroupedRow(
 		formatColoredCacheHitRate(model.usage.inputTokens, model.usage.cachedInputTokens),
 	);
 	const totalLines = models.map((model) => formatTokenCount(model.usage.totalTokens));
-	const costLines = models.map((model) => formatCurrency(model.usage.costUSD));
+	const costLines = models.map((model) => formatCostForDisplay(model.usage.costUSD));
 
 	modelLines.push(pc.bold('total'));
 	shareLines.push(pc.bold('100.0%'));
@@ -83,7 +83,7 @@ function formatCodexUsageGroupedRow(
 	cacheReadLines.push(pc.bold(formatTokenCount(total.cachedInputTokens)));
 	hitLines.push(pc.bold(formatColoredCacheHitRate(total.inputTokens, total.cachedInputTokens)));
 	totalLines.push(pc.bold(formatTokenCount(total.totalTokens)));
-	costLines.push(pc.bold(formatCurrency(total.costUSD)));
+	costLines.push(pc.bold(formatCostForDisplay(total.costUSD)));
 
 	return [
 		firstColumnValue,
@@ -110,7 +110,7 @@ function formatCodexGrandTotalsRow(total: CodexUsageDisplay): (string | number)[
 		pc.yellow(formatTokenCount(total.cachedInputTokens)),
 		formatColoredCacheHitRate(total.inputTokens, total.cachedInputTokens),
 		pc.yellow(formatTokenCount(total.totalTokens)),
-		pc.yellow(formatCurrency(total.costUSD)),
+		formatCostForDisplay(total.costUSD),
 	];
 }
 
@@ -212,10 +212,10 @@ export const dailyCommand = define({
 					'Input',
 					'Output',
 					'Reasoning',
-					'Cache Read',
+					'Cache',
 					'Hit',
-					'Total Tokens',
-					'Cost (USD)',
+					'Total',
+					'Cost',
 				],
 				colAligns: ['left', 'left', 'right', 'right', 'right', 'right', 'right', 'right', 'right', 'right'],
 				compactHead: [
@@ -225,10 +225,10 @@ export const dailyCommand = define({
 					'Input',
 					'Output',
 					'Reasoning',
-					'Cache Read',
+					'Cache',
 					'Hit',
-					'Total Tokens',
-					'Cost (USD)',
+					'Total',
+					'Cost',
 				],
 				compactColAligns: [
 					'left',
