@@ -30,7 +30,11 @@
 						},
 						"mode": {
 							"type": "string",
-							"enum": ["auto", "calculate", "display"],
+							"enum": [
+								"auto",
+								"calculate",
+								"display"
+							],
 							"description": "Cost calculation mode: auto (use costUSD if exists, otherwise calculate), calculate (always calculate), display (always use costUSD)",
 							"markdownDescription": "Cost calculation mode: auto (use costUSD if exists, otherwise calculate), calculate (always calculate), display (always use costUSD)",
 							"default": "auto"
@@ -49,7 +53,10 @@
 						},
 						"order": {
 							"type": "string",
-							"enum": ["desc", "asc"],
+							"enum": [
+								"desc",
+								"asc"
+							],
 							"description": "Sort order: desc (newest first) or asc (oldest first)",
 							"markdownDescription": "Sort order: desc (newest first) or asc (oldest first)",
 							"default": "asc"
@@ -121,7 +128,11 @@
 								},
 								"mode": {
 									"type": "string",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display"
+									],
 									"description": "Cost calculation mode: auto (use costUSD if exists, otherwise calculate), calculate (always calculate), display (always use costUSD)",
 									"markdownDescription": "Cost calculation mode: auto (use costUSD if exists, otherwise calculate), calculate (always calculate), display (always use costUSD)",
 									"default": "auto"
@@ -140,7 +151,10 @@
 								},
 								"order": {
 									"type": "string",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"description": "Sort order: desc (newest first) or asc (oldest first)",
 									"markdownDescription": "Sort order: desc (newest first) or asc (oldest first)",
 									"default": "asc"
@@ -194,6 +208,12 @@
 									"description": "Filter to specific project name",
 									"markdownDescription": "Filter to specific project name"
 								},
+								"detail": {
+									"type": "boolean",
+									"description": "Show full daily columns, including cache creation tokens",
+									"markdownDescription": "Show full daily columns, including cache creation tokens",
+									"default": false
+								},
 								"projectAliases": {
 									"type": "string",
 									"description": "Comma-separated project aliases (e.g., 'ccusage=Usage Tracker,myproject=My Project')",
@@ -223,7 +243,11 @@
 								},
 								"mode": {
 									"type": "string",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display"
+									],
 									"description": "Cost calculation mode: auto (use costUSD if exists, otherwise calculate), calculate (always calculate), display (always use costUSD)",
 									"markdownDescription": "Cost calculation mode: auto (use costUSD if exists, otherwise calculate), calculate (always calculate), display (always use costUSD)",
 									"default": "auto"
@@ -242,7 +266,10 @@
 								},
 								"order": {
 									"type": "string",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"description": "Sort order: desc (newest first) or asc (oldest first)",
 									"markdownDescription": "Sort order: desc (newest first) or asc (oldest first)",
 									"default": "asc"
@@ -309,7 +336,11 @@
 								},
 								"mode": {
 									"type": "string",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display"
+									],
 									"description": "Cost calculation mode: auto (use costUSD if exists, otherwise calculate), calculate (always calculate), display (always use costUSD)",
 									"markdownDescription": "Cost calculation mode: auto (use costUSD if exists, otherwise calculate), calculate (always calculate), display (always use costUSD)",
 									"default": "auto"
@@ -328,7 +359,10 @@
 								},
 								"order": {
 									"type": "string",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"description": "Sort order: desc (newest first) or asc (oldest first)",
 									"markdownDescription": "Sort order: desc (newest first) or asc (oldest first)",
 									"default": "asc"
@@ -410,7 +444,11 @@
 								},
 								"mode": {
 									"type": "string",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display"
+									],
 									"description": "Cost calculation mode: auto (use costUSD if exists, otherwise calculate), calculate (always calculate), display (always use costUSD)",
 									"markdownDescription": "Cost calculation mode: auto (use costUSD if exists, otherwise calculate), calculate (always calculate), display (always use costUSD)",
 									"default": "auto"
@@ -494,7 +532,11 @@
 								},
 								"mode": {
 									"type": "string",
-									"enum": ["auto", "calculate", "display"],
+									"enum": [
+										"auto",
+										"calculate",
+										"display"
+									],
 									"description": "Cost calculation mode: auto (use costUSD if exists, otherwise calculate), calculate (always calculate), display (always use costUSD)",
 									"markdownDescription": "Cost calculation mode: auto (use costUSD if exists, otherwise calculate), calculate (always calculate), display (always use costUSD)",
 									"default": "auto"
@@ -513,7 +555,10 @@
 								},
 								"order": {
 									"type": "string",
-									"enum": ["desc", "asc"],
+									"enum": [
+										"desc",
+										"asc"
+									],
 									"description": "Sort order: desc (newest first) or asc (oldest first)",
 									"markdownDescription": "Sort order: desc (newest first) or asc (oldest first)",
 									"default": "asc"
@@ -593,14 +638,24 @@
 								},
 								"visualBurnRate": {
 									"type": "string",
-									"enum": ["off", "emoji", "text", "emoji-text"],
+									"enum": [
+										"off",
+										"emoji",
+										"text",
+										"emoji-text"
+									],
 									"description": "Controls the visualization of the burn rate status",
 									"markdownDescription": "Controls the visualization of the burn rate status",
 									"default": "off"
 								},
 								"costSource": {
 									"type": "string",
-									"enum": ["auto", "ccusage", "cc", "both"],
+									"enum": [
+										"auto",
+										"ccusage",
+										"cc",
+										"both"
+									],
 									"description": "Session cost source: auto (prefer CC then ccusage), ccusage (always calculate), cc (always use Claude Code cost), both (show both costs)",
 									"markdownDescription": "Session cost source: auto (prefer CC then ccusage), ccusage (always calculate), cc (always use Claude Code cost), both (show both costs)",
 									"default": "auto"
