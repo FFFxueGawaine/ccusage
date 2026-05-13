@@ -1,3 +1,4 @@
+import type { PricingMetadata } from '../data-loader.ts';
 import process from 'node:process';
 import {
 	createModelUsageReportTable,
@@ -72,9 +73,11 @@ export const dailyCommand = define({
 			logger.level = 0;
 		}
 
+		const pricingMetadata: PricingMetadata = { missingPricingModels: new Set<string>() };
 		const dailyData = await loadDailyUsageData({
 			...mergedOptions,
 			groupByProject: mergedOptions.instances,
+			pricingMetadata,
 		});
 
 		if (dailyData.length === 0) {
@@ -217,6 +220,30 @@ export const dailyCommand = define({
 			}, { includeCacheCreate }));
 
 			log(table.toString());
+
+			const costMode = mergedOptions.mode ?? 'auto';
+			if (costMode === 'display') {
+				logger.info('Pricing: display mode (using stored costUSD values)');
+			} else if (mergedOptions.offline) {
+				logger.info('Pricing: offline bundled LiteLLM data');
+			} else {
+				logger.info('Pricing: LiteLLM data (online, with bundled fallback)');
+			}
+
+			const displayedModels = new Set<string>(
+				dailyData.flatMap((data) => [
+					...data.modelsUsed,
+					...data.modelBreakdowns.map((breakdown) => breakdown.modelName),
+				]),
+			);
+			const missingPricingModels = Array.from(pricingMetadata.missingPricingModels)
+				.filter((model) => displayedModels.has(model))
+				.sort();
+			if (missingPricingModels.length > 0) {
+				logger.warn(
+					`Pricing missing for: ${missingPricingModels.join(', ')}. Cost may be understated.`,
+				);
+			}
 
 			// Show guidance message if in compact mode
 			if (table.isCompactMode()) {

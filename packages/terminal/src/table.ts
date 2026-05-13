@@ -1540,6 +1540,67 @@ if (import.meta.vitest != null) {
 			expect(row[8]).toContain('53.28M');
 			expect(row[9]).toContain('$54.60');
 		});
+
+		it('keeps grouped columns aligned when cache create is hidden', () => {
+			const row = formatUsageDataGroupedRow('May 12, 2026', {
+				inputTokens: 3_771_190,
+				outputTokens: 310_790,
+				cacheCreationTokens: 77_550,
+				cacheReadTokens: 49_119_250,
+				totalCost: 54.6,
+				modelBreakdowns: [
+					{
+						modelName: 'gpt-5.5',
+						inputTokens: 3_556_550,
+						outputTokens: 300_660,
+						cacheCreationTokens: 73_450,
+						cacheReadTokens: 48_760_000,
+						cost: 54.01,
+					},
+					{
+						modelName: 'gpt-5.4',
+						inputTokens: 214_640,
+						outputTokens: 10_130,
+						cacheCreationTokens: 4100,
+						cacheReadTokens: 359_250,
+						cost: 0.59,
+					},
+				],
+			}, { includeCacheCreate: false });
+
+			expect(row).toHaveLength(9);
+			expect(row[5]).toContain('48.76M');
+			expect(row[6]).toContain('93.1%');
+			expect(row[7]).toContain('53.28M');
+			expect(row[8]).toContain('$54.60');
+		});
+
+		it('renders compact model report without hidden cache create column', () => {
+			const table = createModelUsageReportTable('Date', true, { includeCacheCreate: false });
+			table.push(formatUsageDataGroupedRow('May 12, 2026', {
+				inputTokens: 1000,
+				outputTokens: 100,
+				cacheCreationTokens: 0,
+				cacheReadTokens: 900,
+				totalCost: 1,
+				modelBreakdowns: [
+					{
+						modelName: 'gpt-5.5',
+						inputTokens: 1000,
+						outputTokens: 100,
+						cacheCreationTokens: 0,
+						cacheReadTokens: 900,
+						cost: 1,
+					},
+				],
+			}, { includeCacheCreate: false }));
+
+			const output = table.toString();
+			expect(table.isCompactMode()).toBe(true);
+			expect(output).toContain('Cache');
+			expect(output).toContain('Cost');
+			expect(output).not.toContain('C.Create');
+		});
 	});
 
 	describe('formatCurrency', () => {

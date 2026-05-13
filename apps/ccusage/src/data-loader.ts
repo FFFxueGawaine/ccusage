@@ -634,12 +634,14 @@ export async function sortFilesByTimestamp(files: string[]): Promise<string[]> {
  * @param data - Usage data entry
  * @param mode - Cost calculation mode (auto, calculate, or display)
  * @param fetcher - Pricing fetcher instance for calculating costs from tokens
+ * @param pricingMetadata - Optional metadata collector for missing pricing
  * @returns Calculated cost in USD
  */
 export async function calculateCostForEntry(
 	data: UsageData,
 	mode: CostMode,
 	fetcher: PricingFetcher,
+	pricingMetadata?: PricingMetadata,
 ): Promise<number> {
 	const speed = data.message.usage.speed;
 
@@ -651,10 +653,19 @@ export async function calculateCostForEntry(
 	if (mode === 'calculate') {
 		// Always calculate from tokens
 		if (data.message.model != null) {
-			return Result.unwrap(
-				fetcher.calculateCostFromTokens(data.message.usage, data.message.model, { speed }),
-				0,
+			const result = await fetcher.calculateCostFromTokens(
+				data.message.usage,
+				data.message.model,
+				{ speed },
 			);
+			if (Result.isFailure(result)) {
+				const model = getDisplayModelName(data);
+				if (model != null) {
+					pricingMetadata?.missingPricingModels.add(model);
+				}
+				return 0;
+			}
+			return result.value;
 		}
 		return 0;
 	}
@@ -666,10 +677,19 @@ export async function calculateCostForEntry(
 		}
 
 		if (data.message.model != null) {
-			return Result.unwrap(
-				fetcher.calculateCostFromTokens(data.message.usage, data.message.model, { speed }),
-				0,
+			const result = await fetcher.calculateCostFromTokens(
+				data.message.usage,
+				data.message.model,
+				{ speed },
 			);
+			if (Result.isFailure(result)) {
+				const model = getDisplayModelName(data);
+				if (model != null) {
+					pricingMetadata?.missingPricingModels.add(model);
+				}
+				return 0;
+			}
+			return result.value;
 		}
 
 		return 0;
@@ -737,6 +757,13 @@ export type DateFilter = {
 };
 
 /**
+ * Metadata collected while calculating costs.
+ */
+export type PricingMetadata = {
+	missingPricingModels: Set<string>;
+};
+
+/**
  * Configuration options for loading usage data
  */
 export type LoadOptions = {
@@ -749,6 +776,7 @@ export type LoadOptions = {
 	project?: string; // Filter to specific project name
 	startOfWeek?: WeekDay; // Start of week for weekly aggregation
 	timezone?: string; // Timezone for date grouping (e.g., 'UTC', 'America/New_York'). Defaults to system timezone
+	pricingMetadata?: PricingMetadata; // Collect pricing calculation metadata for CLI guidance
 } & DateFilter;
 
 /**
@@ -824,7 +852,9 @@ export async function loadDailyUsageData(options?: LoadOptions): Promise<DailyUs
 				// If fetcher is available, calculate cost based on mode and tokens
 				// If fetcher is null, use pre-calculated costUSD or default to 0
 				const cost =
-					fetcher != null ? await calculateCostForEntry(data, mode, fetcher) : (data.costUSD ?? 0);
+					fetcher != null
+						? await calculateCostForEntry(data, mode, fetcher, options?.pricingMetadata)
+						: (data.costUSD ?? 0);
 
 				allEntries.push({ data, date, cost, model: getDisplayModelName(data), project });
 			} catch {
@@ -987,7 +1017,9 @@ export async function loadSessionData(options?: LoadOptions): Promise<SessionUsa
 
 				const sessionKey = `${projectPath}/${sessionId}`;
 				const cost =
-					fetcher != null ? await calculateCostForEntry(data, mode, fetcher) : (data.costUSD ?? 0);
+					fetcher != null
+						? await calculateCostForEntry(data, mode, fetcher, options?.pricingMetadata)
+						: (data.costUSD ?? 0);
 
 				allEntries.push({
 					data,
@@ -1127,11 +1159,12 @@ export async function loadWeeklyUsageData(options?: LoadOptions): Promise<Weekly
  * @param options - Options for loading data
  * @param options.mode - Cost calculation mode (auto, calculate, display)
  * @param options.offline - Whether to use offline pricing data
+ * @param options.pricingMetadata - Optional metadata collector for missing pricing
  * @returns Usage data for the specific session or null if not found
  */
 export async function loadSessionUsageById(
 	sessionId: string,
-	options?: { mode?: CostMode; offline?: boolean },
+	options?: { mode?: CostMode; offline?: boolean; pricingMetadata?: PricingMetadata },
 ): Promise<{ totalCost: number; entries: UsageData[] } | null> {
 	const claudePaths = getClaudePaths();
 
@@ -1168,7 +1201,9 @@ export async function loadSessionUsageById(
 			const data = result.output;
 
 			const cost =
-				fetcher != null ? await calculateCostForEntry(data, mode, fetcher) : (data.costUSD ?? 0);
+				fetcher != null
+					? await calculateCostForEntry(data, mode, fetcher, options?.pricingMetadata)
+					: (data.costUSD ?? 0);
 
 			totalCost += cost;
 			entries.push(data);
@@ -1419,7 +1454,9 @@ export async function loadSessionBlockData(options?: LoadOptions): Promise<Sessi
 				markAsProcessed(uniqueHash, processedHashes);
 
 				const cost =
-					fetcher != null ? await calculateCostForEntry(data, mode, fetcher) : (data.costUSD ?? 0);
+					fetcher != null
+						? await calculateCostForEntry(data, mode, fetcher, options?.pricingMetadata)
+						: (data.costUSD ?? 0);
 
 				// Get Claude Code usage limit expiration date
 				const usageLimitResetTime = getUsageLimitResetTime(data);
@@ -3785,6 +3822,25 @@ invalid json line
 				expect(result).toBe(0);
 			});
 
+			it('should record missing pricing models', async () => {
+				const dataWithUnknownModel = {
+					...mockUsageData,
+					message: { ...mockUsageData.message, model: createModelName('unknown-model') },
+				};
+				const pricingMetadata: PricingMetadata = { missingPricingModels: new Set<string>() };
+
+				using fetcher = new PricingFetcher(true);
+				const result = await calculateCostForEntry(
+					dataWithUnknownModel,
+					'calculate',
+					fetcher,
+					pricingMetadata,
+				);
+
+				expect(result).toBe(0);
+				expect(Array.from(pricingMetadata.missingPricingModels)).toEqual(['unknown-model']);
+			});
+
 			it('should handle missing cache tokens', async () => {
 				const dataWithoutCacheTokens: UsageData = {
 					timestamp: createISOTimestamp('2024-01-01T10:00:00Z'),
@@ -3960,6 +4016,39 @@ invalid json line
 
 				// Should return empty array or valid data without throwing
 				expect(Array.isArray(result)).toBe(true);
+			});
+
+			it('should collect missing pricing models while loading daily usage', async () => {
+				await using fixture = await createFixture({
+					projects: {
+						'test-project': {
+							session: {
+								'usage.jsonl': JSON.stringify({
+									timestamp: '2024-01-01T10:00:00Z',
+									message: {
+										usage: {
+											input_tokens: 1000,
+											output_tokens: 500,
+										},
+										model: 'unknown-model',
+									},
+								}),
+							},
+						},
+					},
+				});
+				const pricingMetadata: PricingMetadata = { missingPricingModels: new Set<string>() };
+
+				const result = await loadDailyUsageData({
+					claudePath: fixture.path,
+					offline: true,
+					mode: 'calculate',
+					pricingMetadata,
+				});
+
+				expect(result).toHaveLength(1);
+				expect(result[0]?.totalCost).toBe(0);
+				expect(Array.from(pricingMetadata.missingPricingModels)).toEqual(['unknown-model']);
 			});
 		});
 	});
