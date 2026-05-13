@@ -954,13 +954,14 @@ export function createModelUsageReportTable(
 	if (includeCacheCreate) {
 		headers.splice(5, 0, 'C.Create');
 	}
+	const compactHeaders = [firstColumnName, 'Model', 'Share', 'Hit', 'Total', 'Cost'];
 
 	return new ResponsiveTable({
 		head: headers,
 		style: { head: ['cyan'] },
 		colAligns: headers.map((_, index) => (index < 2 ? 'left' : 'right')),
-		compactHead: headers,
-		compactColAligns: headers.map((_, index) => (index < 2 ? 'left' : 'right')),
+		compactHead: compactHeaders,
+		compactColAligns: compactHeaders.map((_, index) => (index < 2 ? 'left' : 'right')),
 		compactThreshold: 100,
 		forceCompact,
 	});
@@ -1597,8 +1598,12 @@ if (import.meta.vitest != null) {
 
 			const output = table.toString();
 			expect(table.isCompactMode()).toBe(true);
-			expect(output).toContain('Cache');
+			expect(output).toContain('Share');
+			expect(output).toContain('Hit');
 			expect(output).toContain('Cost');
+			expect(output).not.toContain('Input');
+			expect(output).not.toContain('Output');
+			expect(output).not.toContain('Cache');
 			expect(output).not.toContain('C.Create');
 		});
 	});

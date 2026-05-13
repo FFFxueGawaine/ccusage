@@ -36,6 +36,11 @@ export const dailyCommand = define({
 			short: 'p',
 			description: 'Filter to specific project name',
 		},
+		detail: {
+			type: 'boolean',
+			description: 'Show full daily columns, including cache creation tokens',
+			default: false,
+		},
 		projectAliases: {
 			type: 'string',
 			description:
@@ -137,12 +142,13 @@ export const dailyCommand = define({
 			// Print header
 			logger.box('Claude Code Token Usage Report - Daily');
 
-			const includeCacheCreate = dailyData.some(
+			const showDetail = Boolean(ctx.values.detail);
+			const includeCacheCreate = showDetail || dailyData.some(
 				(data) =>
 					data.cacheCreationTokens > 0 ||
 					data.modelBreakdowns.some((breakdown) => breakdown.cacheCreationTokens > 0),
 			);
-			const table = createModelUsageReportTable('Date', ctx.values.compact, {
+			const table = createModelUsageReportTable('Date', ctx.values.compact && !showDetail, {
 				includeCacheCreate,
 			});
 
