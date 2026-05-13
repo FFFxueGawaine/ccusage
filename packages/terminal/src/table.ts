@@ -578,6 +578,18 @@ function formatSharePercent(part: number, whole: number): string {
 	return whole === 0 ? '0.0%' : formatPercent((part / whole) * 100);
 }
 
+function formatColoredCacheHitRate(inputTokens: number, cacheReadTokens: number): string {
+	const value = inputTokens === 0 ? 0 : (cacheReadTokens / inputTokens) * 100;
+	const formatted = formatPercent(value);
+	if (value >= 90) {
+		return pc.green(formatted);
+	}
+	if (value >= 60) {
+		return pc.yellow(formatted);
+	}
+	return pc.red(formatted);
+}
+
 function joinLines(lines: string[]): string {
 	return lines.join('\n');
 }
@@ -667,6 +679,10 @@ export type UsageData = {
 	modelBreakdowns?: ModelBreakdownDisplayData[];
 };
 
+type ModelUsageReportOptions = {
+	includeCacheCreate?: boolean;
+};
+
 /**
  * Creates model-level usage rows for a grouped report period
  * @param firstColumnValue - Date/month/week/session display value
@@ -732,23 +748,33 @@ export function formatUsageDataRows(firstColumnValue: string, data: UsageData): 
  * @param data - Usage data with model breakdowns
  * @returns A single table row with model lines stacked inside each cell
  */
-export function formatUsageDataGroupedRow(firstColumnValue: string, data: UsageData): (string | number)[] {
+export function formatUsageDataGroupedRow(
+	firstColumnValue: string,
+	data: UsageData,
+	options: ModelUsageReportOptions = {},
+): (string | number)[] {
+	const includeCacheCreate = options.includeCacheCreate ?? true;
 	const totalTokens = getDisplayedTotalTokens(data);
-	const breakdowns = data.modelBreakdowns ?? [];
+	const breakdowns = [...(data.modelBreakdowns ?? [])].sort(
+		(a, b) => getDisplayedTotalTokens(b) - getDisplayedTotalTokens(a),
+	);
 
 	if (breakdowns.length === 0) {
-		return [
+		const row = [
 			firstColumnValue,
 			'total',
 			'100.0%',
 			formatTokenCount(getDisplayedInputTokens(data)),
 			formatTokenCount(data.outputTokens),
-			formatTokenCount(data.cacheCreationTokens),
 			formatTokenCount(data.cacheReadTokens),
-			formatCacheHitRate(getDisplayedInputTokens(data), data.cacheReadTokens),
+			formatColoredCacheHitRate(getDisplayedInputTokens(data), data.cacheReadTokens),
 			formatTokenCount(totalTokens),
 			formatCurrency(data.totalCost),
 		];
+		if (includeCacheCreate) {
+			row.splice(5, 0, formatTokenCount(data.cacheCreationTokens));
+		}
+		return row;
 	}
 
 	const modelLines = breakdowns.map((breakdown, index) =>
@@ -764,7 +790,7 @@ export function formatUsageDataGroupedRow(firstColumnValue: string, data: UsageD
 	);
 	const cacheReadLines = breakdowns.map((breakdown) => formatTokenCount(breakdown.cacheReadTokens));
 	const hitLines = breakdowns.map((breakdown) =>
-		formatCacheHitRate(getDisplayedInputTokens(breakdown), breakdown.cacheReadTokens),
+		formatColoredCacheHitRate(getDisplayedInputTokens(breakdown), breakdown.cacheReadTokens),
 	);
 	const totalLines = breakdowns.map((breakdown) => formatTokenCount(getDisplayedTotalTokens(breakdown)));
 	const costLines = breakdowns.map((breakdown) => formatCurrency(breakdown.cost));
@@ -775,22 +801,25 @@ export function formatUsageDataGroupedRow(firstColumnValue: string, data: UsageD
 	outputLines.push(pc.bold(formatTokenCount(data.outputTokens)));
 	cacheCreateLines.push(pc.bold(formatTokenCount(data.cacheCreationTokens)));
 	cacheReadLines.push(pc.bold(formatTokenCount(data.cacheReadTokens)));
-	hitLines.push(pc.bold(formatCacheHitRate(getDisplayedInputTokens(data), data.cacheReadTokens)));
+	hitLines.push(pc.bold(formatColoredCacheHitRate(getDisplayedInputTokens(data), data.cacheReadTokens)));
 	totalLines.push(pc.bold(formatTokenCount(totalTokens)));
 	costLines.push(pc.bold(formatCurrency(data.totalCost)));
 
-	return [
+	const row = [
 		firstColumnValue,
 		joinLines(modelLines),
 		joinLines(shareLines),
 		joinLines(inputLines),
 		joinLines(outputLines),
-		joinLines(cacheCreateLines),
 		joinLines(cacheReadLines),
 		joinLines(hitLines),
 		joinLines(totalLines),
 		joinLines(costLines),
 	];
+	if (includeCacheCreate) {
+		row.splice(5, 0, joinLines(cacheCreateLines));
+	}
+	return row;
 }
 
 /**
@@ -798,20 +827,27 @@ export function formatUsageDataGroupedRow(firstColumnValue: string, data: UsageD
  * @param totals - Totals data to display
  * @returns Formatted grand total row
  */
-export function formatGrandTotalsRow(totals: UsageData): (string | number)[] {
+export function formatGrandTotalsRow(
+	totals: UsageData,
+	options: ModelUsageReportOptions = {},
+): (string | number)[] {
+	const includeCacheCreate = options.includeCacheCreate ?? true;
 	const totalTokens = getDisplayedTotalTokens(totals);
-	return [
+	const row = [
 		pc.yellow('Total'),
 		pc.yellow('Grand Total'),
 		pc.yellow('100.0%'),
 		pc.yellow(formatTokenCount(getDisplayedInputTokens(totals))),
 		pc.yellow(formatTokenCount(totals.outputTokens)),
-		pc.yellow(formatTokenCount(totals.cacheCreationTokens)),
 		pc.yellow(formatTokenCount(totals.cacheReadTokens)),
-		pc.yellow(formatCacheHitRate(getDisplayedInputTokens(totals), totals.cacheReadTokens)),
+		formatColoredCacheHitRate(getDisplayedInputTokens(totals), totals.cacheReadTokens),
 		pc.yellow(formatTokenCount(totalTokens)),
 		pc.yellow(formatCurrency(totals.totalCost)),
 	];
+	if (includeCacheCreate) {
+		row.splice(5, 0, pc.yellow(formatTokenCount(totals.cacheCreationTokens)));
+	}
+	return row;
 }
 
 /**
@@ -823,37 +859,30 @@ export function formatGrandTotalsRow(totals: UsageData): (string | number)[] {
 export function createModelUsageReportTable(
 	firstColumnName: string,
 	forceCompact = false,
+	options: ModelUsageReportOptions = {},
 ): ResponsiveTable {
+	const includeCacheCreate = options.includeCacheCreate ?? true;
 	const headers = [
 		firstColumnName,
 		'Model',
 		'Share',
 		'Input',
 		'Output',
-		'Cache Create',
 		'Cache Read',
 		'Hit',
 		'Total Tokens',
 		'Cost (USD)',
 	];
+	if (includeCacheCreate) {
+		headers.splice(5, 0, 'Cache Create');
+	}
 
 	return new ResponsiveTable({
 		head: headers,
 		style: { head: ['cyan'] },
-		colAligns: ['left', 'left', 'right', 'right', 'right', 'right', 'right', 'right', 'right', 'right'],
+		colAligns: headers.map((_, index) => (index < 2 ? 'left' : 'right')),
 		compactHead: headers,
-		compactColAligns: [
-			'left',
-			'left',
-			'right',
-			'right',
-			'right',
-			'right',
-			'right',
-			'right',
-			'right',
-			'right',
-		],
+		compactColAligns: headers.map((_, index) => (index < 2 ? 'left' : 'right')),
 		compactThreshold: 100,
 		forceCompact,
 	});

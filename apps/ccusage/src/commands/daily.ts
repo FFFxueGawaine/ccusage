@@ -134,7 +134,14 @@ export const dailyCommand = define({
 			// Print header
 			logger.box('Claude Code Token Usage Report - Daily');
 
-			const table = createModelUsageReportTable('Date', ctx.values.compact);
+			const includeCacheCreate = dailyData.some(
+				(data) =>
+					data.cacheCreationTokens > 0 ||
+					data.modelBreakdowns.some((breakdown) => breakdown.cacheCreationTokens > 0),
+			);
+			const table = createModelUsageReportTable('Date', ctx.values.compact, {
+				includeCacheCreate,
+			});
 
 			// Add daily data - group by project if instances flag is used
 			if (Boolean(mergedOptions.instances) && dailyData.some((d) => d.project != null)) {
@@ -146,7 +153,7 @@ export const dailyCommand = define({
 					// Add project section header
 					if (!isFirstProject) {
 						// Add empty row for visual separation between projects
-						table.push(['', '', '', '', '', '', '', '', '', '']);
+						table.push(Array.from({ length: includeCacheCreate ? 10 : 9 }, () => ''));
 					}
 
 					// Add project header row
@@ -160,20 +167,24 @@ export const dailyCommand = define({
 						'',
 						'',
 						'',
-						'',
+						...(includeCacheCreate ? [''] : []),
 					]);
 
 					// Add data rows for this project
 					for (const data of projectData) {
-						table.push(formatUsageDataGroupedRow(formatDateLong(data.date, mergedOptions.timezone), {
-							inputTokens: data.inputTokens,
-							outputTokens: data.outputTokens,
-							cacheCreationTokens: data.cacheCreationTokens,
-							cacheReadTokens: data.cacheReadTokens,
-							totalCost: data.totalCost,
-							modelsUsed: data.modelsUsed,
-							modelBreakdowns: data.modelBreakdowns,
-						}));
+						table.push(formatUsageDataGroupedRow(
+							formatDateLong(data.date, mergedOptions.timezone),
+							{
+								inputTokens: data.inputTokens,
+								outputTokens: data.outputTokens,
+								cacheCreationTokens: data.cacheCreationTokens,
+								cacheReadTokens: data.cacheReadTokens,
+								totalCost: data.totalCost,
+								modelsUsed: data.modelsUsed,
+								modelBreakdowns: data.modelBreakdowns,
+							},
+							{ includeCacheCreate },
+						));
 					}
 
 					isFirstProject = false;
@@ -181,15 +192,19 @@ export const dailyCommand = define({
 			} else {
 				// Standard display without project grouping
 				for (const data of dailyData) {
-					table.push(formatUsageDataGroupedRow(formatDateLong(data.date, mergedOptions.timezone), {
-						inputTokens: data.inputTokens,
-						outputTokens: data.outputTokens,
-						cacheCreationTokens: data.cacheCreationTokens,
-						cacheReadTokens: data.cacheReadTokens,
-						totalCost: data.totalCost,
-						modelsUsed: data.modelsUsed,
-						modelBreakdowns: data.modelBreakdowns,
-					}));
+					table.push(formatUsageDataGroupedRow(
+						formatDateLong(data.date, mergedOptions.timezone),
+						{
+							inputTokens: data.inputTokens,
+							outputTokens: data.outputTokens,
+							cacheCreationTokens: data.cacheCreationTokens,
+							cacheReadTokens: data.cacheReadTokens,
+							totalCost: data.totalCost,
+							modelsUsed: data.modelsUsed,
+							modelBreakdowns: data.modelBreakdowns,
+						},
+						{ includeCacheCreate },
+					));
 				}
 			}
 
@@ -199,7 +214,7 @@ export const dailyCommand = define({
 				cacheCreationTokens: totals.cacheCreationTokens,
 				cacheReadTokens: totals.cacheReadTokens,
 				totalCost: totals.totalCost,
-			}));
+			}, { includeCacheCreate }));
 
 			log(table.toString());
 

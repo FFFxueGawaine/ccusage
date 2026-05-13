@@ -1,6 +1,5 @@
 import process from 'node:process';
 import {
-	formatCacheHitRate,
 	formatCurrency,
 	formatTokenCount,
 	ResponsiveTable,
@@ -36,6 +35,18 @@ function formatSharePercent(part: number, whole: number): string {
 	return whole === 0 ? '0.0%' : formatPercent((part / whole) * 100);
 }
 
+function formatColoredCacheHitRate(inputTokens: number, cachedInputTokens: number): string {
+	const value = inputTokens === 0 ? 0 : (cachedInputTokens / inputTokens) * 100;
+	const formatted = formatPercent(value);
+	if (value >= 90) {
+		return pc.green(formatted);
+	}
+	if (value >= 60) {
+		return pc.yellow(formatted);
+	}
+	return pc.red(formatted);
+}
+
 function joinLines(lines: string[]): string {
 	return lines.join('\n');
 }
@@ -59,7 +70,7 @@ function formatCodexUsageGroupedRow(
 	const reasoningLines = models.map((model) => formatTokenCount(model.usage.reasoningOutputTokens));
 	const cacheReadLines = models.map((model) => formatTokenCount(model.usage.cachedInputTokens));
 	const hitLines = models.map((model) =>
-		formatCacheHitRate(model.usage.inputTokens, model.usage.cachedInputTokens),
+		formatColoredCacheHitRate(model.usage.inputTokens, model.usage.cachedInputTokens),
 	);
 	const totalLines = models.map((model) => formatTokenCount(model.usage.totalTokens));
 	const costLines = models.map((model) => formatCurrency(model.usage.costUSD));
@@ -70,7 +81,7 @@ function formatCodexUsageGroupedRow(
 	outputLines.push(pc.bold(formatTokenCount(total.outputTokens)));
 	reasoningLines.push(pc.bold(formatTokenCount(total.reasoningOutputTokens)));
 	cacheReadLines.push(pc.bold(formatTokenCount(total.cachedInputTokens)));
-	hitLines.push(pc.bold(formatCacheHitRate(total.inputTokens, total.cachedInputTokens)));
+	hitLines.push(pc.bold(formatColoredCacheHitRate(total.inputTokens, total.cachedInputTokens)));
 	totalLines.push(pc.bold(formatTokenCount(total.totalTokens)));
 	costLines.push(pc.bold(formatCurrency(total.costUSD)));
 
@@ -97,7 +108,7 @@ function formatCodexGrandTotalsRow(total: CodexUsageDisplay): (string | number)[
 		pc.yellow(formatTokenCount(total.outputTokens)),
 		pc.yellow(formatTokenCount(total.reasoningOutputTokens)),
 		pc.yellow(formatTokenCount(total.cachedInputTokens)),
-		pc.yellow(formatCacheHitRate(total.inputTokens, total.cachedInputTokens)),
+		formatColoredCacheHitRate(total.inputTokens, total.cachedInputTokens),
 		pc.yellow(formatTokenCount(total.totalTokens)),
 		pc.yellow(formatCurrency(total.costUSD)),
 	];
@@ -239,7 +250,6 @@ export const dailyCommand = define({
 			for (const row of rows) {
 				const modelRows = await Promise.all(
 					Object.entries(row.models)
-						.sort(([a], [b]) => a.localeCompare(b))
 						.map(async ([modelName, usage]) => {
 							const pricing = await pricingSource.getPricing(modelName);
 							return {
@@ -256,6 +266,7 @@ export const dailyCommand = define({
 							};
 						}),
 				);
+				modelRows.sort((a, b) => b.usage.totalTokens - a.usage.totalTokens);
 
 				table.push(formatCodexUsageGroupedRow(row.date, modelRows, row));
 			}
