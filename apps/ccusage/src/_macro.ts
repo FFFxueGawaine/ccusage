@@ -5,20 +5,37 @@ import {
 	filterPricingDataset,
 } from '@ccusage/internal/pricing-fetch-utils';
 
-function isClaudeModel(modelName: string, _pricing: LiteLLMModelPricing): boolean {
-	return (
-		modelName.startsWith('claude-') ||
-		modelName.startsWith('anthropic.claude-') ||
-		modelName.startsWith('anthropic/claude-')
-	);
+const USAGE_MODEL_PREFIXES = [
+	'claude-',
+	'anthropic.claude-',
+	'anthropic/claude-',
+	'gpt-',
+	'openai/gpt-',
+	'azure/gpt-',
+	'openrouter/openai/gpt-',
+	'gemini-',
+	'gemini/',
+	'google/gemini',
+	'vertex_ai/gemini',
+	'openrouter/google/gemini',
+	'deepseek-',
+	'deepseek/',
+	'openrouter/deepseek',
+	'MiniMax-',
+	'minimax/',
+	'openrouter/minimax',
+];
+
+function isUsageModel(modelName: string, _pricing: LiteLLMModelPricing): boolean {
+	return USAGE_MODEL_PREFIXES.some((prefix) => modelName.startsWith(prefix));
 }
 
-export async function prefetchClaudePricing(): Promise<Record<string, LiteLLMModelPricing>> {
+export async function prefetchUsagePricing(): Promise<Record<string, LiteLLMModelPricing>> {
 	try {
 		const dataset = await fetchLiteLLMPricingDataset();
-		return filterPricingDataset(dataset, isClaudeModel);
+		return filterPricingDataset(dataset, isUsageModel);
 	} catch (error) {
-		console.warn('Failed to prefetch Claude pricing data, proceeding with empty cache.', error);
+		console.warn('Failed to prefetch usage pricing data, proceeding with empty cache.', error);
 		return createPricingDataset();
 	}
 }

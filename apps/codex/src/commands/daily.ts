@@ -1,24 +1,118 @@
 import process from 'node:process';
 import {
-	addEmptySeparatorRow,
-	formatCurrency,
-	formatDateCompact,
-	formatModelsDisplayMultiline,
-	formatNumber,
+	formatCostForDisplay,
+	formatTokenCount,
 	ResponsiveTable,
 } from '@ccusage/terminal/table';
 import { define } from 'gunshi';
 import pc from 'picocolors';
 import { DEFAULT_TIMEZONE } from '../_consts.ts';
 import { sharedArgs } from '../_shared-args.ts';
-import { formatModelsList, splitUsageTokens } from '../command-utils.ts';
 import { buildDailyReport } from '../daily-report.ts';
 import { loadTokenUsageEvents } from '../data-loader.ts';
 import { normalizeFilterDate } from '../date-utils.ts';
 import { log, logger } from '../logger.ts';
 import { CodexPricingSource } from '../pricing.ts';
+import { calculateCostUSD } from '../token-utils.ts';
 
-const TABLE_COLUMN_COUNT = 8;
+type CodexUsageDisplay = {
+	inputTokens: number;
+	cachedInputTokens: number;
+	outputTokens: number;
+	reasoningOutputTokens: number;
+	totalTokens: number;
+	costUSD: number;
+};
+
+function formatPercent(value: number): string {
+	if (!Number.isFinite(value)) {
+		return '0.0%';
+	}
+	return `${value.toFixed(1)}%`;
+}
+
+function formatSharePercent(part: number, whole: number): string {
+	return whole === 0 ? '0.0%' : formatPercent((part / whole) * 100);
+}
+
+function formatColoredCacheHitRate(inputTokens: number, cachedInputTokens: number): string {
+	const value = inputTokens === 0 ? 0 : (cachedInputTokens / inputTokens) * 100;
+	const formatted = formatPercent(value);
+	if (value >= 90) {
+		return pc.green(formatted);
+	}
+	if (value < 70) {
+		return pc.red(formatted);
+	}
+	return formatted;
+}
+
+function joinLines(lines: string[]): string {
+	return lines.join('\n');
+}
+
+function formatModelLabel(modelName: string, isFallback: boolean | undefined, index: number): string {
+	const colors = [pc.yellow, pc.blue, pc.magenta, pc.green, pc.cyan] as const;
+	const color = colors[index % colors.length] ?? pc.white;
+	const label = isFallback === true ? `${modelName} (fallback)` : modelName;
+	return color(label);
+}
+
+function formatCodexUsageGroupedRow(
+	firstColumnValue: string,
+	models: Array<{ name: string; usage: CodexUsageDisplay; isFallback?: boolean }>,
+	total: CodexUsageDisplay,
+): (string | number)[] {
+	const modelLines = models.map((model, index) => formatModelLabel(model.name, model.isFallback, index));
+	const shareLines = models.map((model) => formatSharePercent(model.usage.totalTokens, total.totalTokens));
+	const inputLines = models.map((model) => formatTokenCount(model.usage.inputTokens));
+	const outputLines = models.map((model) => formatTokenCount(model.usage.outputTokens));
+	const reasoningLines = models.map((model) => formatTokenCount(model.usage.reasoningOutputTokens));
+	const cacheReadLines = models.map((model) => formatTokenCount(model.usage.cachedInputTokens));
+	const hitLines = models.map((model) =>
+		formatColoredCacheHitRate(model.usage.inputTokens, model.usage.cachedInputTokens),
+	);
+	const totalLines = models.map((model) => formatTokenCount(model.usage.totalTokens));
+	const costLines = models.map((model) => formatCostForDisplay(model.usage.costUSD));
+
+	modelLines.push(pc.bold('total'));
+	shareLines.push(pc.bold('100.0%'));
+	inputLines.push(pc.bold(formatTokenCount(total.inputTokens)));
+	outputLines.push(pc.bold(formatTokenCount(total.outputTokens)));
+	reasoningLines.push(pc.bold(formatTokenCount(total.reasoningOutputTokens)));
+	cacheReadLines.push(pc.bold(formatTokenCount(total.cachedInputTokens)));
+	hitLines.push(pc.bold(formatColoredCacheHitRate(total.inputTokens, total.cachedInputTokens)));
+	totalLines.push(pc.bold(formatTokenCount(total.totalTokens)));
+	costLines.push(pc.bold(formatCostForDisplay(total.costUSD)));
+
+	return [
+		firstColumnValue,
+		joinLines(modelLines),
+		joinLines(shareLines),
+		joinLines(inputLines),
+		joinLines(outputLines),
+		joinLines(reasoningLines),
+		joinLines(cacheReadLines),
+		joinLines(hitLines),
+		joinLines(totalLines),
+		joinLines(costLines),
+	];
+}
+
+function formatCodexGrandTotalsRow(total: CodexUsageDisplay): (string | number)[] {
+	return [
+		pc.yellow('Total'),
+		pc.yellow('Grand Total'),
+		pc.yellow('100.0%'),
+		pc.yellow(formatTokenCount(total.inputTokens)),
+		pc.yellow(formatTokenCount(total.outputTokens)),
+		pc.yellow(formatTokenCount(total.reasoningOutputTokens)),
+		pc.yellow(formatTokenCount(total.cachedInputTokens)),
+		formatColoredCacheHitRate(total.inputTokens, total.cachedInputTokens),
+		pc.yellow(formatTokenCount(total.totalTokens)),
+		formatCostForDisplay(total.costUSD),
+	];
+}
 
 export const dailyCommand = define({
 	name: 'daily',
@@ -113,64 +207,71 @@ export const dailyCommand = define({
 			const table: ResponsiveTable = new ResponsiveTable({
 				head: [
 					'Date',
-					'Models',
+					'Model',
+					'Share',
 					'Input',
 					'Output',
 					'Reasoning',
-					'Cache Read',
-					'Total Tokens',
-					'Cost (USD)',
+					'Cache',
+					'Hit',
+					'Total',
+					'Cost',
 				],
-				colAligns: ['left', 'left', 'right', 'right', 'right', 'right', 'right', 'right'],
-				compactHead: ['Date', 'Models', 'Input', 'Output', 'Cost (USD)'],
-				compactColAligns: ['left', 'left', 'right', 'right', 'right'],
+				colAligns: ['left', 'left', 'right', 'right', 'right', 'right', 'right', 'right', 'right', 'right'],
+				compactHead: [
+					'Date',
+					'Model',
+					'Share',
+					'Input',
+					'Output',
+					'Reasoning',
+					'Cache',
+					'Hit',
+					'Total',
+					'Cost',
+				],
+				compactColAligns: [
+					'left',
+					'left',
+					'right',
+					'right',
+					'right',
+					'right',
+					'right',
+					'right',
+					'right',
+					'right',
+				],
 				compactThreshold: 100,
 				forceCompact: ctx.values.compact,
 				style: { head: ['cyan'] },
-				dateFormatter: (dateStr: string) => formatDateCompact(dateStr),
 			});
 
-			const totalsForDisplay = {
-				inputTokens: 0,
-				outputTokens: 0,
-				reasoningTokens: 0,
-				cacheReadTokens: 0,
-				totalTokens: 0,
-				costUSD: 0,
-			};
-
 			for (const row of rows) {
-				const split = splitUsageTokens(row);
-				totalsForDisplay.inputTokens += split.inputTokens;
-				totalsForDisplay.outputTokens += split.outputTokens;
-				totalsForDisplay.reasoningTokens += split.reasoningTokens;
-				totalsForDisplay.cacheReadTokens += split.cacheReadTokens;
-				totalsForDisplay.totalTokens += row.totalTokens;
-				totalsForDisplay.costUSD += row.costUSD;
+				const modelRows = await Promise.all(
+					Object.entries(row.models)
+						.map(async ([modelName, usage]) => {
+							const pricing = await pricingSource.getPricing(modelName);
+							return {
+								name: modelName,
+								isFallback: usage.isFallback,
+								usage: {
+									inputTokens: usage.inputTokens,
+									cachedInputTokens: usage.cachedInputTokens,
+									outputTokens: usage.outputTokens,
+									reasoningOutputTokens: usage.reasoningOutputTokens,
+									totalTokens: usage.totalTokens,
+									costUSD: calculateCostUSD(usage, pricing),
+								},
+							};
+						}),
+				);
+				modelRows.sort((a, b) => b.usage.totalTokens - a.usage.totalTokens);
 
-				table.push([
-					row.date,
-					formatModelsDisplayMultiline(formatModelsList(row.models)),
-					formatNumber(split.inputTokens),
-					formatNumber(split.outputTokens),
-					formatNumber(split.reasoningTokens),
-					formatNumber(split.cacheReadTokens),
-					formatNumber(row.totalTokens),
-					formatCurrency(row.costUSD),
-				]);
+				table.push(formatCodexUsageGroupedRow(row.date, modelRows, row));
 			}
 
-			addEmptySeparatorRow(table, TABLE_COLUMN_COUNT);
-			table.push([
-				pc.yellow('Total'),
-				'',
-				pc.yellow(formatNumber(totalsForDisplay.inputTokens)),
-				pc.yellow(formatNumber(totalsForDisplay.outputTokens)),
-				pc.yellow(formatNumber(totalsForDisplay.reasoningTokens)),
-				pc.yellow(formatNumber(totalsForDisplay.cacheReadTokens)),
-				pc.yellow(formatNumber(totalsForDisplay.totalTokens)),
-				pc.yellow(formatCurrency(totalsForDisplay.costUSD)),
-			]);
+			table.push(formatCodexGrandTotalsRow(totals));
 
 			log(table.toString());
 

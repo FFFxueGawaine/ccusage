@@ -114,6 +114,7 @@ export const monthlyCommand = define({
 					cacheReadTokens: data.cacheReadTokens,
 					totalCost: data.totalCost,
 					modelsUsed: data.modelsUsed,
+					modelBreakdowns: data.modelBreakdowns,
 				});
 				table.push(row);
 
@@ -124,7 +125,7 @@ export const monthlyCommand = define({
 			}
 
 			// Add empty row for visual separation before totals
-			addEmptySeparatorRow(table, 8);
+			addEmptySeparatorRow(table, 9);
 
 			// Add totals
 			const totalsRow = formatTotalsRow({

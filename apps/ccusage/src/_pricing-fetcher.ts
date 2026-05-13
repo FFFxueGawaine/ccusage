@@ -1,25 +1,35 @@
 import { LiteLLMPricingFetcher } from '@ccusage/internal/pricing';
 import { Result } from '@praha/byethrow';
-import { prefetchClaudePricing } from './_macro.ts' with { type: 'macro' };
+import { prefetchUsagePricing } from './_macro.ts' with { type: 'macro' };
 import { logger } from './logger.ts';
 
-const CLAUDE_PROVIDER_PREFIXES = [
+const USAGE_PROVIDER_PREFIXES = [
 	'anthropic/',
+	'openai/',
+	'azure/',
 	'claude-3-5-',
 	'claude-3-',
 	'claude-',
 	'openrouter/openai/',
+	'gemini/',
+	'google/',
+	'vertex_ai/',
+	'openrouter/google/',
+	'deepseek/',
+	'openrouter/deepseek/',
+	'minimax/',
+	'openrouter/minimax/',
 ];
 
-const PREFETCHED_CLAUDE_PRICING = prefetchClaudePricing();
+const PREFETCHED_USAGE_PRICING = prefetchUsagePricing();
 
 export class PricingFetcher extends LiteLLMPricingFetcher {
 	constructor(offline = false) {
 		super({
 			offline,
-			offlineLoader: async () => PREFETCHED_CLAUDE_PRICING,
+			offlineLoader: async () => PREFETCHED_USAGE_PRICING,
 			logger,
-			providerPrefixes: CLAUDE_PROVIDER_PREFIXES,
+			providerPrefixes: USAGE_PROVIDER_PREFIXES,
 		});
 	}
 }
@@ -30,6 +40,20 @@ if (import.meta.vitest != null) {
 			using fetcher = new PricingFetcher(true);
 			const pricing = await Result.unwrap(fetcher.fetchModelPricing());
 			expect(pricing.size).toBeGreaterThan(0);
+		});
+
+		it('calculates cost for GPT model tokens from offline pricing', async () => {
+			using fetcher = new PricingFetcher(true);
+			const cost = await Result.unwrap(fetcher.calculateCostFromTokens(
+				{
+					input_tokens: 1000,
+					output_tokens: 500,
+					cache_read_input_tokens: 300,
+				},
+				'gpt-5.5',
+			));
+
+			expect(cost).toBeGreaterThan(0);
 		});
 
 		it('calculates cost for Claude model tokens', async () => {

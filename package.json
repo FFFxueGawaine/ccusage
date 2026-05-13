@@ -34,7 +34,7 @@
 		"lint:oxfmt": "oxfmt --check .",
 		"lint:root": "eslint --cache eslint.config.js .",
 		"lint:submodules": "pnpm --parallel -r --no-bail /^lint/",
-		"prepare": "pnpm run /^prepare:/",
+		"prepare": "git config --local core.hooksPath .githooks",
 		"prepare:git": "git config --local core.hooksPath .githooks",
 		"prerelease": "pnpm run --filter '*' prerelease",
 		"release": "pnpm bumpp -r",

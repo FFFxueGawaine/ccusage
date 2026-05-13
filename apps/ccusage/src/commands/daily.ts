@@ -1,18 +1,16 @@
-import type { UsageReportConfig } from '@ccusage/terminal/table';
+import type { PricingMetadata } from '../data-loader.ts';
 import process from 'node:process';
 import {
-	addEmptySeparatorRow,
-	createUsageReportTable,
-	formatTotalsRow,
-	formatUsageDataRow,
-	pushBreakdownRows,
+	createModelUsageReportTable,
+	formatDateLong,
+	formatGrandTotalsRow,
+	formatUsageDataGroupedRow,
 } from '@ccusage/terminal/table';
 import { Result } from '@praha/byethrow';
 import { define } from 'gunshi';
 import pc from 'picocolors';
 import { loadConfig, mergeConfigWithArgs } from '../_config-loader-tokens.ts';
 import { groupByProject, groupDataByProject } from '../_daily-grouping.ts';
-import { formatDateCompact } from '../_date-utils.ts';
 import { processWithJq } from '../_jq-processor.ts';
 import { formatProjectName } from '../_project-names.ts';
 import { sharedCommandConfig } from '../_shared-args.ts';
@@ -37,6 +35,11 @@ export const dailyCommand = define({
 			type: 'string',
 			short: 'p',
 			description: 'Filter to specific project name',
+		},
+		detail: {
+			type: 'boolean',
+			description: 'Show full daily columns, including cache creation tokens',
+			default: false,
 		},
 		projectAliases: {
 			type: 'string',
@@ -75,9 +78,11 @@ export const dailyCommand = define({
 			logger.level = 0;
 		}
 
+		const pricingMetadata: PricingMetadata = { missingPricingModels: new Set<string>() };
 		const dailyData = await loadDailyUsageData({
 			...mergedOptions,
 			groupByProject: mergedOptions.instances,
+			pricingMetadata,
 		});
 
 		if (dailyData.length === 0) {
@@ -137,13 +142,15 @@ export const dailyCommand = define({
 			// Print header
 			logger.box('Claude Code Token Usage Report - Daily');
 
-			// Create table with compact mode support
-			const tableConfig: UsageReportConfig = {
-				firstColumnName: 'Date',
-				dateFormatter: (dateStr: string) => formatDateCompact(dateStr, mergedOptions.timezone),
-				forceCompact: ctx.values.compact,
-			};
-			const table = createUsageReportTable(tableConfig);
+			const showDetail = Boolean(ctx.values.detail);
+			const includeCacheCreate = showDetail || dailyData.some(
+				(data) =>
+					data.cacheCreationTokens > 0 ||
+					data.modelBreakdowns.some((breakdown) => breakdown.cacheCreationTokens > 0),
+			);
+			const table = createModelUsageReportTable('Date', ctx.values.compact && !showDetail, {
+				includeCacheCreate,
+			});
 
 			// Add daily data - group by project if instances flag is used
 			if (Boolean(mergedOptions.instances) && dailyData.some((d) => d.project != null)) {
@@ -155,7 +162,7 @@ export const dailyCommand = define({
 					// Add project section header
 					if (!isFirstProject) {
 						// Add empty row for visual separation between projects
-						table.push(['', '', '', '', '', '', '', '']);
+						table.push(Array.from({ length: includeCacheCreate ? 10 : 9 }, () => ''));
 					}
 
 					// Add project header row
@@ -168,24 +175,25 @@ export const dailyCommand = define({
 						'',
 						'',
 						'',
+						'',
+						...(includeCacheCreate ? [''] : []),
 					]);
 
 					// Add data rows for this project
 					for (const data of projectData) {
-						const row = formatUsageDataRow(data.date, {
-							inputTokens: data.inputTokens,
-							outputTokens: data.outputTokens,
-							cacheCreationTokens: data.cacheCreationTokens,
-							cacheReadTokens: data.cacheReadTokens,
-							totalCost: data.totalCost,
-							modelsUsed: data.modelsUsed,
-						});
-						table.push(row);
-
-						// Add model breakdown rows if flag is set
-						if (mergedOptions.breakdown) {
-							pushBreakdownRows(table, data.modelBreakdowns);
-						}
+						table.push(formatUsageDataGroupedRow(
+							formatDateLong(data.date, mergedOptions.timezone),
+							{
+								inputTokens: data.inputTokens,
+								outputTokens: data.outputTokens,
+								cacheCreationTokens: data.cacheCreationTokens,
+								cacheReadTokens: data.cacheReadTokens,
+								totalCost: data.totalCost,
+								modelsUsed: data.modelsUsed,
+								modelBreakdowns: data.modelBreakdowns,
+							},
+							{ includeCacheCreate },
+						));
 					}
 
 					isFirstProject = false;
@@ -193,38 +201,55 @@ export const dailyCommand = define({
 			} else {
 				// Standard display without project grouping
 				for (const data of dailyData) {
-					// Main row
-					const row = formatUsageDataRow(data.date, {
-						inputTokens: data.inputTokens,
-						outputTokens: data.outputTokens,
-						cacheCreationTokens: data.cacheCreationTokens,
-						cacheReadTokens: data.cacheReadTokens,
-						totalCost: data.totalCost,
-						modelsUsed: data.modelsUsed,
-					});
-					table.push(row);
-
-					// Add model breakdown rows if flag is set
-					if (mergedOptions.breakdown) {
-						pushBreakdownRows(table, data.modelBreakdowns);
-					}
+					table.push(formatUsageDataGroupedRow(
+						formatDateLong(data.date, mergedOptions.timezone),
+						{
+							inputTokens: data.inputTokens,
+							outputTokens: data.outputTokens,
+							cacheCreationTokens: data.cacheCreationTokens,
+							cacheReadTokens: data.cacheReadTokens,
+							totalCost: data.totalCost,
+							modelsUsed: data.modelsUsed,
+							modelBreakdowns: data.modelBreakdowns,
+						},
+						{ includeCacheCreate },
+					));
 				}
 			}
 
-			// Add empty row for visual separation before totals
-			addEmptySeparatorRow(table, 8);
-
-			// Add totals
-			const totalsRow = formatTotalsRow({
+			table.push(formatGrandTotalsRow({
 				inputTokens: totals.inputTokens,
 				outputTokens: totals.outputTokens,
 				cacheCreationTokens: totals.cacheCreationTokens,
 				cacheReadTokens: totals.cacheReadTokens,
 				totalCost: totals.totalCost,
-			});
-			table.push(totalsRow);
+			}, { includeCacheCreate }));
 
 			log(table.toString());
+
+			const costMode = mergedOptions.mode ?? 'auto';
+			if (costMode === 'display') {
+				logger.info('Pricing: display mode (using stored costUSD values)');
+			} else if (mergedOptions.offline) {
+				logger.info('Pricing: offline bundled LiteLLM data');
+			} else {
+				logger.info('Pricing: LiteLLM data (online, with bundled fallback)');
+			}
+
+			const displayedModels = new Set<string>(
+				dailyData.flatMap((data) => [
+					...data.modelsUsed,
+					...data.modelBreakdowns.map((breakdown) => breakdown.modelName),
+				]),
+			);
+			const missingPricingModels = Array.from(pricingMetadata.missingPricingModels)
+				.filter((model) => displayedModels.has(model))
+				.sort();
+			if (missingPricingModels.length > 0) {
+				logger.warn(
+					`Pricing missing for: ${missingPricingModels.join(', ')}. Cost may be understated.`,
+				);
+			}
 
 			// Show guidance message if in compact mode
 			if (table.isCompactMode()) {
