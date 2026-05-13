@@ -457,7 +457,7 @@ export function formatCurrency(amount: number): string {
  */
 export function formatCostForDisplay(amount: number): string {
 	if (amount === 0) {
-		return pc.gray('-');
+		return pc.gray(formatCurrency(amount));
 	}
 
 	const formatted = formatCurrency(amount);
